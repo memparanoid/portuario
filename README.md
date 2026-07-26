@@ -1,10 +1,5 @@
 # portuario
 
-![functions](badges/functions.svg)
-![lines](badges/lines.svg)
-![regions](badges/regions.svg)
-![branches](badges/branches.svg)
-
 Concurrency-safe free-port picking for test suites that spawn real servers.
 
 When parallel tests (e.g. `cargo nextest`, one process per test) need ports
@@ -81,6 +76,17 @@ let port = Picker::new()
 - The contention suite bakes this in: 40 nextest processes fighting over an
   8-port arena, repeatedly — a test can only fail if two concurrent holders
   are ever handed the same port.
+
+## Coverage
+
+![functions](badges/functions.svg)
+![lines](badges/lines.svg)
+![regions](badges/regions.svg)
+![branches](badges/branches.svg)
+
+Measured with `cargo llvm-cov` under nextest; regenerate the badges with
+`./badge.sh`. The two uncovered regions are unreachable-by-construction and
+documented in-source with `// Uncovered:` comments.
 
 ## Credit where it is due
 
