@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo_v1.svg" width="160" alt="portuario: an anchor whose head is a padlock">
+</p>
+
 # portuario
 
 Concurrency-safe free-port picking for test suites that spawn real servers.

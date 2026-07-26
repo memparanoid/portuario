@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- shackle: the padlock arc -->
+  <path d="M 96 92 v -18 a 32 32 0 0 1 64 0 v 18"
+        fill="none" stroke="#e8590c" stroke-width="16" stroke-linecap="round"/>
+  <!-- padlock body -->
+  <rect x="76" y="92" width="104" height="72" rx="14" fill="#14304d"/>
+  <!-- keyhole -->
+  <circle cx="128" cy="120" r="11" fill="#f6f8fa"/>
+  <rect x="122" y="126" width="12" height="20" rx="5" fill="#f6f8fa"/>
+  <!-- anchor shaft -->
+  <line x1="128" y1="164" x2="128" y2="216" stroke="#14304d" stroke-width="14"/>
+  <!-- stock (crossbar) -->
+  <line x1="100" y1="182" x2="156" y2="182" stroke="#14304d" stroke-width="12" stroke-linecap="round"/>
+  <!-- flukes -->
+  <path d="M 62 184 A 66 66 0 0 0 128 224 A 66 66 0 0 0 194 184"
+        fill="none" stroke="#14304d" stroke-width="14" stroke-linecap="round"/>
+  <!-- fluke tips -->
+  <path d="M 62 184 l -8 -16 l 22 2 z" fill="#14304d"/>
+  <path d="M 194 184 l 8 -16 l -22 2 z" fill="#14304d"/>
+</svg>
