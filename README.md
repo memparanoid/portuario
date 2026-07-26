@@ -77,6 +77,14 @@ let port = Picker::new()
   8-port arena, repeatedly — a test can only fail if two concurrent holders
   are ever handed the same port.
 
+## Credit where it is due
+
+`portuario` is inspired by [portpicker](https://crates.io/crates/portpicker) —
+the sub-ephemeral candidate range and the TCP+UDP/IPv4+IPv6 freeness probe
+come straight from its playbook. If you are not running tests in parallel
+processes (e.g. not using `cargo nextest`), portpicker is strongly
+recommended instead: it does the job with none of the locking machinery.
+
 ## MSRV
 
 Rust 1.89 (`File::try_lock`).
