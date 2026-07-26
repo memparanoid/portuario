@@ -335,13 +335,13 @@ fn test_resolve_lock_dir_returns_the_manifest_target_without_a_workspace_root() 
 // ║ CONCURRENCY — sustained cross-process contention                         ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 
-// 40 identical tests generated from one template: under nextest each runs in
+// 500 identical tests generated from one template: under nextest each runs in
 // its own process, exercising the real cross-process coordination the lock
 // exists for. They all fight over an 8-port arena with ~16 running at once,
 // so pickers queue on the retry path thousands of times while holders sleep.
 // The huge attempt budget means a test can only fail if the lock hands the
 // same port to two concurrent holders — never because of scheduling luck.
-seq_macro::seq!(N in 0..40 {
+seq_macro::seq!(N in 0..500 {
     #[test]
     fn test_pick_returns_a_bindable_port_under_contention_~N() -> TestResult {
         let port = picker("contention", 25200..25208)

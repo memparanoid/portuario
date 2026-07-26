@@ -73,7 +73,7 @@ let port = Picker::new()
   only excluded by the freeness check, not by the lock. Picking from below the
   ephemeral range makes the remaining window between pick and bind a
   1-in-thousands coincidence of explicit binds, not something the OS does.
-- The contention suite bakes this in: 40 nextest processes fighting over an
+- The contention suite bakes this in: 500 nextest processes fighting over an
   8-port arena, repeatedly — a test can only fail if two concurrent holders
   are ever handed the same port.
 
