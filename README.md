@@ -1,5 +1,10 @@
 # portuario
 
+![functions](badges/functions.svg)
+![lines](badges/lines.svg)
+![regions](badges/regions.svg)
+![branches](badges/branches.svg)
+
 Concurrency-safe free-port picking for test suites that spawn real servers.
 
 When parallel tests (e.g. `cargo nextest`, one process per test) need ports
