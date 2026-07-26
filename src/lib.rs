@@ -96,6 +96,19 @@ pub struct Port {
 
 impl Port {
     /// The reserved port number.
+    ///
+    /// Never call this on a temporary — `pick_port()?.value()` compiles
+    /// without warnings, but the `Port` drops at the end of the statement and
+    /// the lock is released immediately, leaving a number with no
+    /// reservation behind it. Bind the guard first and keep it alive while
+    /// the port is in use:
+    ///
+    /// ```no_run
+    /// let port = portuario::pick_port()?;       // guard lives...
+    /// let addr = format!("127.0.0.1:{port}");
+    /// // ...until the end of scope, where the reservation is released
+    /// # Ok::<(), portuario::PickError>(())
+    /// ```
     #[must_use]
     pub fn value(&self) -> u16 {
         self.value

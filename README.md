@@ -17,6 +17,12 @@ let url = format!("127.0.0.1:{port}");
 port.release()?;
 ```
 
+> **Careful:** `Port` is a lock guard — the reservation lives exactly as long
+> as the value does. `pick_port()?.value()` compiles without warnings, but the
+> guard is a temporary: it drops at the end of the statement, the lock is
+> released on the spot, and the `u16` you kept is backed by nothing. Always
+> bind the `Port` and keep it alive while the port is in use.
+
 ## How it works
 
 1. A candidate is drawn at random from `15000..25000` — a range that sits
