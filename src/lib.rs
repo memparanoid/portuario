@@ -271,12 +271,12 @@ impl Picker {
         let mut rng = Rng::from_entropy();
 
         for _ in 0..self.max_attempts {
-            let value = rng.pick_in(&self.range);
+            let candidate = rng.pick_in(&self.range);
             let lock = File::options()
                 .create(true)
                 .truncate(false)
                 .write(true)
-                .open(lock_dir.join(format!("{value}.lock")))?;
+                .open(lock_dir.join(format!("{candidate}.lock")))?;
             // Lock first, verify second: a candidate owned by someone else is
             // skipped without ever binding it, so pickers never trample the
             // port its owner is about to bind. `try_lock` failures other than
@@ -288,8 +288,11 @@ impl Picker {
             }
             // Verified while the lock is held; dropping `lock` on the failing
             // path releases the reservation for whoever comes next.
-            if bind_all(value, self.ipv6).is_some() {
-                return Ok(Port { value, lock });
+            if bind_all(candidate, self.ipv6).is_some() {
+                return Ok(Port {
+                    value: candidate,
+                    lock,
+                });
             }
         }
 
@@ -326,12 +329,12 @@ fn bind_all(port: u16, ipv6: bool) -> Option<Bound> {
 /// Binds `[::]:port` with `IPV6_V6ONLY` set, so the socket never claims the
 /// IPv4 wildcard too (Linux binds dual-stack by default, which would collide
 /// with the IPv4 sockets we already hold).
-fn bind_v6(port: u16, ty: Type) -> Option<Socket> {
+fn bind_v6(port: u16, socket_type: Type) -> Option<Socket> {
     // Uncovered: creating an AF_INET6 socket only fails (EAFNOSUPPORT) on
     // hosts with IPv6 disabled at the kernel — where this branch is what
     // makes ipv6_available() return false. On IPv6 hosts it cannot fire, and
     // a test can't unmake the host's IPv6 stack without a root netns.
-    let socket = Socket::new(Domain::IPV6, ty, None).ok()?;
+    let socket = Socket::new(Domain::IPV6, socket_type, None).ok()?;
     let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
 
     // Uncovered: setsockopt(IPV6_V6ONLY) on a freshly created, unbound

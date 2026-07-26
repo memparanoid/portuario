@@ -81,11 +81,11 @@ fn test_port_display_and_debug_return_the_value() -> TestResult {
 #[test]
 fn test_pick_error_display_returns_a_message_per_variant() {
     let no_lock_dir = PickError::NoLockDir;
-    let io = PickError::from(io::Error::other("boom"));
+    let io_error = PickError::from(io::Error::other("boom"));
     let exhausted = PickError::Exhausted { attempts: 7 };
 
     assert!(format!("{no_lock_dir}").contains("set Picker::lock_dir explicitly"));
-    assert_eq!(format!("{io}"), "port picking failed: boom");
+    assert_eq!(format!("{io_error}"), "port picking failed: boom");
     assert_eq!(
         format!("{exhausted}"),
         "no free port found after 7 attempts"
@@ -95,11 +95,11 @@ fn test_pick_error_display_returns_a_message_per_variant() {
 #[test]
 fn test_pick_error_source_returns_the_underlying_io_error() {
     let no_lock_dir = PickError::NoLockDir;
-    let io = PickError::from(io::Error::other("boom"));
+    let io_error = PickError::from(io::Error::other("boom"));
     let exhausted = PickError::Exhausted { attempts: 7 };
 
     assert!(no_lock_dir.source().is_none());
-    assert!(io.source().is_some());
+    assert!(io_error.source().is_some());
     assert!(exhausted.source().is_none());
 }
 
