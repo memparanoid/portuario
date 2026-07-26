@@ -24,7 +24,7 @@
 //! ```no_run
 //! let port = portuario::pick_port().expect("no free port");
 //! let url = format!("127.0.0.1:{port}");
-//! // spawn your server/container on `port`; the reservation is dropped
+//! // spawn your server on `port`; the reservation is dropped
 //! // (best effort) when `port` goes out of scope, or explicitly:
 //! port.release().expect("release failed");
 //! ```
