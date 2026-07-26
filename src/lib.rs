@@ -87,6 +87,8 @@ pub fn pick_port() -> Result<Port, PickError> {
 /// Dropping it releases the lock best-effort (the kernel releases it when the
 /// lock file's descriptor closes — including on panic or process death); use
 /// [`Port::release`] to release explicitly and observe failures.
+#[must_use = "the reservation is released the moment this Port is dropped — \
+              bind the value and keep it alive while the port is in use"]
 pub struct Port {
     value: u16,
     lock: File,
