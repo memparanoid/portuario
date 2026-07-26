@@ -327,9 +327,18 @@ fn bind_all(port: u16, ipv6: bool) -> Option<Bound> {
 /// IPv4 wildcard too (Linux binds dual-stack by default, which would collide
 /// with the IPv4 sockets we already hold).
 fn bind_v6(port: u16, ty: Type) -> Option<Socket> {
+    // Uncovered: creating an AF_INET6 socket only fails (EAFNOSUPPORT) on
+    // hosts with IPv6 disabled at the kernel — where this branch is what
+    // makes ipv6_available() return false. On IPv6 hosts it cannot fire, and
+    // a test can't unmake the host's IPv6 stack without a root netns.
     let socket = Socket::new(Domain::IPV6, ty, None).ok()?;
     let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
 
+    // Uncovered: setsockopt(IPV6_V6ONLY) on a freshly created, unbound
+    // AF_INET6 socket can only fail on EBADF/ENOTSOCK (we own the fd) or on
+    // OSes predating the option — unreachable from any caller input. If it
+    // ever fired, the candidate is discarded conservatively, which is the
+    // correct reaction anyway.
     socket.set_only_v6(true).ok()?;
     socket.bind(&addr.into()).ok()?;
 
