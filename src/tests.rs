@@ -114,12 +114,13 @@ fn test_pick_panics_when_the_range_is_empty() {
 }
 
 #[test]
-#[ignore = "Uncovered under cargo: CARGO_MANIFEST_DIR is always set for test \
-            processes, so pick() can never hit the NoLockDir branch here. \
-            Covered directly by `test_resolve_lock_dir_reports_no_lock_dir_error`. \
-            Shell preserved in case resolution grows new failure modes."]
 fn test_pick_propagates_resolve_lock_dir_error() {
-    // Intentionally empty.
+    let mut config = Picker::new().range(25100..25101);
+    config.env = OsEnvMap::default();
+
+    let result = config.pick();
+
+    assert!(matches!(result, Err(PickError::NoLockDir)));
 }
 
 #[test]

@@ -32,7 +32,8 @@
 #[cfg(test)]
 mod tests;
 
-use std::ffi::OsString;
+use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::{self, File};
 use std::io;
@@ -48,6 +49,25 @@ use socket2::{Domain, Socket, Type};
 /// assigns these ports to outgoing connections.
 const DEFAULT_RANGE: Range<u16> = 15000..25000;
 const DEFAULT_MAX_ATTEMPTS: u32 = 100;
+
+/// Snapshot of the OS environment, taken when the [`Picker`] is built.
+///
+/// Dependency inversion over `std::env`: `pick()` consults this map instead of
+/// the process environment, so tests can hand a [`Picker`] an empty map and
+/// reach the branches that fire when a variable is absent — impossible to do
+/// through the real environment, which cargo always populates.
+#[derive(Debug, Clone, Default)]
+struct OsEnvMap(HashMap<OsString, OsString>);
+
+impl OsEnvMap {
+    fn from_os_env() -> Self {
+        Self(std::env::vars_os().collect())
+    }
+
+    fn get(&self, key: &str) -> Option<OsString> {
+        self.0.get(OsStr::new(key)).cloned()
+    }
+}
 
 /// Picks a free port using the [`Picker`] defaults.
 ///
@@ -166,6 +186,7 @@ pub struct Picker {
     lock_dir: Option<PathBuf>,
     max_attempts: u32,
     ipv6: bool,
+    env: OsEnvMap,
 }
 
 impl Default for Picker {
@@ -175,6 +196,7 @@ impl Default for Picker {
             lock_dir: None,
             max_attempts: DEFAULT_MAX_ATTEMPTS,
             ipv6: ipv6_available(),
+            env: OsEnvMap::from_os_env(),
         }
     }
 }
@@ -242,13 +264,8 @@ impl Picker {
     pub fn pick(&self) -> Result<Port, PickError> {
         assert!(!self.range.is_empty(), "port range must not be empty");
 
-        // Uncovered: cargo and nextest always set CARGO_MANIFEST_DIR for test
-        // processes, so this `?` can only fire when the consumer runs outside
-        // cargo. The branch is covered directly in resolve_lock_dir's tests.
-        let lock_dir = resolve_lock_dir(
-            self.lock_dir.as_deref(),
-            std::env::var_os("CARGO_MANIFEST_DIR"),
-        )?;
+        let lock_dir =
+            resolve_lock_dir(self.lock_dir.as_deref(), self.env.get("CARGO_MANIFEST_DIR"))?;
         fs::create_dir_all(&lock_dir)?;
 
         let mut rng = Rng::from_entropy();
