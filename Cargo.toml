@@ -1,10 +1,11 @@
 [package]
 name = "portuario"
-version = "0.0.1-rc.1"
+version = "0.0.1-rc.2"
 edition = "2024"
 rust-version = "1.89"
 description = "Concurrency-safe free-port picking for test suites, guarded by OS file locks"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/memparanoid/portuario"
 keywords = ["port", "testing", "nextest", "tcp", "lock"]
 categories = ["development-tools::testing", "network-programming"]
 
