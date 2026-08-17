@@ -25,7 +25,9 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-      - name: Tests (including the 500-process contention suite)
+      - name: Tests in one process
+        run: cargo test
+      - name: Tests across processes (including the 500-process contention suite)
         run: cargo nextest run
       - name: Doctests
         run: cargo test --doc

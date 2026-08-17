@@ -42,13 +42,16 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(target_os = "linux")]
+use std::time::{Duration, Instant};
+
 use socket2::{Domain, Socket, Type};
 
 /// Default candidate range, chosen to sit below the ephemeral port range of
 /// Linux (32768..=60999), macOS and Windows (49152..=65535): the kernel never
 /// assigns these ports to outgoing connections.
 const DEFAULT_RANGE: Range<u16> = 15000..25000;
-const DEFAULT_MAX_ATTEMPTS: u32 = 100;
+const DEFAULT_MAX_ATTEMPTS: u32 = 1_000;
 
 /// Snapshot of the OS environment, taken when the [`Picker`] is built.
 ///
@@ -303,7 +306,7 @@ impl Picker {
             }
             // Verified while the lock is held; dropping `lock` on the failing
             // path releases the reservation for whoever comes next.
-            if bind_all(candidate, self.ipv6).is_some() {
+            if bind_all(candidate, self.ipv6) && probes_are_gone(candidate, self.ipv6) {
                 return Ok(Port {
                     value: candidate,
                     lock,
@@ -317,28 +320,72 @@ impl Picker {
     }
 }
 
-/// Sockets verifying a candidate on every stack — bound only while its lock
-/// is already held, so no other picker's port is ever touched.
-struct Bound {
-    _tcp4: TcpListener,
-    _udp4: UdpSocket,
-    _v6: Option<(Socket, Socket)>,
+/// Verifies each stack in its own scope, closing one probe before opening the
+/// next. Keeping all four sockets alive together needlessly widens the window
+/// in which a concurrently forked child can inherit a probe before `exec`.
+fn bind_all(port: u16, ipv6: bool) -> bool {
+    if TcpListener::bind(("0.0.0.0", port)).is_err() {
+        return false;
+    }
+    if UdpSocket::bind(("0.0.0.0", port)).is_err() {
+        return false;
+    }
+    if ipv6 && bind_v6(port, Type::STREAM).is_none() {
+        return false;
+    }
+    if ipv6 && bind_v6(port, Type::DGRAM).is_none() {
+        return false;
+    }
+
+    true
 }
 
-fn bind_all(port: u16, ipv6: bool) -> Option<Bound> {
-    let tcp4 = TcpListener::bind(("0.0.0.0", port)).ok()?;
-    let udp4 = UdpSocket::bind(("0.0.0.0", port)).ok()?;
-    let v6 = if ipv6 {
-        Some((bind_v6(port, Type::STREAM)?, bind_v6(port, Type::DGRAM)?))
-    } else {
-        None
-    };
+/// Waits for forked children to release inherited verification sockets.
+///
+/// `FD_CLOEXEC` closes a descriptor at `exec`, not at `fork`: another thread
+/// can fork while a probe is live, inherit it, and keep the port bound briefly
+/// after this process drops its copy. Reading the kernel's socket tables does
+/// not create another descriptor that could repeat the race.
+#[cfg(target_os = "linux")]
+fn probes_are_gone(port: u16, ipv6: bool) -> bool {
+    const IPV4_TABLES: [&str; 2] = ["/proc/net/tcp", "/proc/net/udp"];
+    const ALL_TABLES: [&str; 4] = [
+        "/proc/net/tcp",
+        "/proc/net/tcp6",
+        "/proc/net/udp",
+        "/proc/net/udp6",
+    ];
+    const DEADLINE: Duration = Duration::from_millis(10);
 
-    Some(Bound {
-        _tcp4: tcp4,
-        _udp4: udp4,
-        _v6: v6,
-    })
+    let started = Instant::now();
+    let tables: &[&str] = if ipv6 { &ALL_TABLES } else { &IPV4_TABLES };
+
+    loop {
+        let wanted = format!(":{port:04X}");
+        let still_bound = tables.iter().any(|table| {
+            fs::read_to_string(table).is_ok_and(|rows| {
+                rows.lines().skip(1).any(|row| {
+                    row.split_whitespace()
+                        .nth(1)
+                        .is_some_and(|address| address.ends_with(&wanted))
+                })
+            })
+        });
+
+        if !still_bound {
+            return true;
+        }
+        if started.elapsed() >= DEADLINE {
+            return false;
+        }
+
+        std::thread::yield_now();
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn probes_are_gone(_port: u16, _ipv6: bool) -> bool {
+    true
 }
 
 /// Binds `[::]:port` with `IPV6_V6ONLY` set, so the socket never claims the

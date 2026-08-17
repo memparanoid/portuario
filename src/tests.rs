@@ -6,6 +6,18 @@ use std::path::PathBuf;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
+#[cfg(unix)]
+fn noop_command() -> std::process::Command {
+    std::process::Command::new("true")
+}
+
+#[cfg(windows)]
+fn noop_command() -> std::process::Command {
+    let mut command = std::process::Command::new("cmd");
+    command.args(["/C", "exit", "0"]);
+    command
+}
+
 /// Each test gets its own lock directory and its own dedicated port(s) so the
 /// suite survives `cargo nextest` process-per-test parallelism as well as
 /// in-process threads. Ports 25100.. sit outside [`DEFAULT_RANGE`].
@@ -355,3 +367,50 @@ seq_macro::seq!(N in 0..500 {
         Ok(())
     }
 });
+
+#[test]
+fn test_pick_returns_a_bindable_port_during_concurrent_process_spawns() -> TestResult {
+    const THREADS: usize = 8;
+    const PICKS_PER_THREAD: usize = 2_000;
+
+    let mut threads: Vec<_> = (0..THREADS)
+        .map(|_| {
+            std::thread::spawn(|| -> Result<(), String> {
+                for _ in 0..PICKS_PER_THREAD {
+                    let port = Picker::new()
+                        .max_attempts(1_000_000)
+                        .pick()
+                        .map_err(|err| err.to_string())?;
+                    let listener =
+                        TcpListener::bind(("127.0.0.1", port.value())).map_err(|err| {
+                            format!("port {} could not be rebound: {err}", port.value())
+                        })?;
+                    drop(listener);
+                }
+
+                Ok(())
+            })
+        })
+        .collect();
+
+    threads.extend((0..THREADS).map(|_| {
+        std::thread::spawn(|| -> Result<(), String> {
+            for _ in 0..PICKS_PER_THREAD {
+                noop_command()
+                    .status()
+                    .map_err(|err| format!("could not spawn true: {err}"))?;
+            }
+
+            Ok(())
+        })
+    }));
+
+    for thread in threads {
+        thread
+            .join()
+            .expect("port-picking thread panicked")
+            .map_err(io::Error::other)?;
+    }
+
+    Ok(())
+}
