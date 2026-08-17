@@ -37,9 +37,13 @@ port.release()?;
    ([`File::try_lock`], flock on Unix, `LockFileEx` on Windows). A candidate
    already locked by another picker is skipped without ever binding it, so
    pickers never trample a port its owner is about to use.
-3. Only while holding the lock is the candidate verified: bound on TCP and UDP
-   over the IPv4 and IPv6 wildcard addresses. Then the probe sockets are
-   dropped and the locked `Port` is returned.
+3. Only while holding the lock is the candidate verified with TCP and UDP
+   probes over the IPv4 and IPv6 wildcard addresses.
+4. After closing the probes, `portuario` waits until their TCP listener stops
+   answering before returning. This matters under `cargo test`: another test
+   thread can fork while a probe is open, and the child keeps its inherited
+   `FD_CLOEXEC` copies alive until `exec`. The check uses a TCP connection and
+   does not bind the candidate again.
 
 The lock is owned by the kernel and tied to the process: it is released the
 moment the process exits — including on panic or `SIGKILL` — so a crashed test
@@ -75,10 +79,15 @@ let port = Picker::new()
     .pick()?;
 ```
 
+The default attempt budget is 1,000 candidates.
+
 ## Guarantees and limits
 
 - The returned port was free on TCP and UDP, IPv4 and IPv6, at pick time, and
   stays reserved against every other `portuario` user until released.
+- Returning also waits out verification sockets inherited by a concurrently
+  forked child. This makes immediate binding reliable in both the threaded
+  `cargo test` runner and process-per-test `cargo nextest`.
 - The reservation is advisory: an unrelated process binding arbitrary ports is
   only excluded by the freeness check, not by the lock. Picking from below the
   ephemeral range makes the remaining window between pick and bind a
@@ -95,16 +104,14 @@ let port = Picker::new()
 ![branches](badges/branches.svg)
 
 Measured with `cargo llvm-cov` under nextest; regenerate the badges with
-`./badge.sh`. The two uncovered regions are unreachable-by-construction and
-documented in-source with `// Uncovered:` comments.
+`./badge.sh`.
 
 ## Credit where it is due
 
 `portuario` is inspired by [portpicker](https://crates.io/crates/portpicker) —
 the sub-ephemeral candidate range and the TCP+UDP/IPv4+IPv6 freeness probe
-come straight from its playbook. If you are not running tests in parallel
-processes (e.g. not using `cargo nextest`), portpicker is strongly
-recommended instead: it does the job with none of the locking machinery.
+come straight from its playbook. `portuario` adds cross-process locks and waits
+out probes inherited by concurrent process spawns.
 
 ## MSRV
 

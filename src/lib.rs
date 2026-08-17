@@ -12,8 +12,9 @@
 //!    binding it, so pickers never trample a port its owner is about to use.
 //! 3. Only while holding the lock is the candidate verified — bound on TCP
 //!    and UDP over IPv4 and IPv6 wildcards — and only then are the probe
-//!    sockets dropped and the locked [`Port`] returned. Reservation and
-//!    freeness check overlap, with no window in between.
+//!    sockets dropped. Inherited copies are also allowed to stop listening
+//!    before the locked [`Port`] is returned.
+//!    Reservation and freeness check overlap, with no window in between.
 //!
 //! The advisory lock ([`std::fs::File::try_lock`]) is owned by the kernel and
 //! tied to the process: it is released the moment the process exits, even on
@@ -37,13 +38,10 @@ use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::{self, File};
 use std::io;
-use std::net::{Ipv6Addr, SocketAddr, TcpListener, UdpSocket};
+use std::net::{Ipv6Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-#[cfg(target_os = "linux")]
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use socket2::{Domain, Socket, Type};
 
@@ -306,7 +304,13 @@ impl Picker {
             }
             // Verified while the lock is held; dropping `lock` on the failing
             // path releases the reservation for whoever comes next.
-            if bind_all(candidate, self.ipv6) && probes_are_gone(candidate, self.ipv6) {
+            if let Some(bound) = bind_all(candidate, self.ipv6) {
+                drop(bound);
+
+                if !probes_are_gone(candidate) {
+                    continue;
+                }
+
                 return Ok(Port {
                     value: candidate,
                     lock,
@@ -320,60 +324,48 @@ impl Picker {
     }
 }
 
-/// Verifies each stack in its own scope, closing one probe before opening the
-/// next. Keeping all four sockets alive together needlessly widens the window
-/// in which a concurrently forked child can inherit a probe before `exec`.
-fn bind_all(port: u16, ipv6: bool) -> bool {
-    if TcpListener::bind(("0.0.0.0", port)).is_err() {
-        return false;
-    }
-    if UdpSocket::bind(("0.0.0.0", port)).is_err() {
-        return false;
-    }
-    if ipv6 && bind_v6(port, Type::STREAM).is_none() {
-        return false;
-    }
-    if ipv6 && bind_v6(port, Type::DGRAM).is_none() {
-        return false;
-    }
+/// Sockets verifying a candidate on every stack. TCP4 stays live throughout
+/// the whole verification, so any child inheriting another probe inherits this
+/// listener as a sentinel too.
+struct Bound {
+    _tcp4: TcpListener,
+    _udp4: UdpSocket,
+    _v6: Option<(Socket, Socket)>,
+}
 
-    true
+fn bind_all(port: u16, ipv6: bool) -> Option<Bound> {
+    let tcp4 = TcpListener::bind(("0.0.0.0", port)).ok()?;
+    let udp4 = UdpSocket::bind(("0.0.0.0", port)).ok()?;
+    let v6 = if ipv6 {
+        Some((bind_v6(port, Type::STREAM)?, bind_v6(port, Type::DGRAM)?))
+    } else {
+        None
+    };
+
+    Some(Bound {
+        _tcp4: tcp4,
+        _udp4: udp4,
+        _v6: v6,
+    })
 }
 
 /// Waits for forked children to release inherited verification sockets.
 ///
 /// `FD_CLOEXEC` closes a descriptor at `exec`, not at `fork`: another thread
 /// can fork while a probe is live, inherit it, and keep the port bound briefly
-/// after this process drops its copy. Reading the kernel's socket tables does
-/// not create another descriptor that could repeat the race.
-#[cfg(target_os = "linux")]
-fn probes_are_gone(port: u16, ipv6: bool) -> bool {
-    const IPV4_TABLES: [&str; 2] = ["/proc/net/tcp", "/proc/net/udp"];
-    const ALL_TABLES: [&str; 4] = [
-        "/proc/net/tcp",
-        "/proc/net/tcp6",
-        "/proc/net/udp",
-        "/proc/net/udp6",
-    ];
+/// after this process drops its copy. Connecting does not bind the candidate,
+/// so this check cannot recreate the race it is waiting out.
+fn probes_are_gone(port: u16) -> bool {
     const DEADLINE: Duration = Duration::from_millis(10);
 
     let started = Instant::now();
-    let tables: &[&str] = if ipv6 { &ALL_TABLES } else { &IPV4_TABLES };
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
 
     loop {
-        let wanted = format!(":{port:04X}");
-        let still_bound = tables.iter().any(|table| {
-            fs::read_to_string(table).is_ok_and(|rows| {
-                rows.lines().skip(1).any(|row| {
-                    row.split_whitespace()
-                        .nth(1)
-                        .is_some_and(|address| address.ends_with(&wanted))
-                })
-            })
-        });
-
-        if !still_bound {
-            return true;
+        match TcpStream::connect(addr) {
+            Err(err) if err.kind() == io::ErrorKind::ConnectionRefused => return true,
+            Ok(stream) => drop(stream),
+            Err(_) => {}
         }
         if started.elapsed() >= DEADLINE {
             return false;
@@ -381,11 +373,6 @@ fn probes_are_gone(port: u16, ipv6: bool) -> bool {
 
         std::thread::yield_now();
     }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn probes_are_gone(_port: u16, _ipv6: bool) -> bool {
-    true
 }
 
 /// Binds `[::]:port` with `IPV6_V6ONLY` set, so the socket never claims the
